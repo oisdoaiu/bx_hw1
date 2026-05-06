@@ -6,11 +6,11 @@
 #include <set>
 #include <sys/time.h>
 #include <omp.h>
-#include "hnswlib/hnswlib/hnswlib.h"
+// #include "hnswlib/hnswlib/hnswlib.h"
 #include "flat_scan.h"
 #include "flat_simd.h"
 
-using namespace hnswlib;
+// using namespace hnswlib;
 
 template<typename T>
 T *LoadData(std::string data_path, size_t& n, size_t& d)
@@ -37,24 +37,24 @@ struct SearchResult{
     int64_t latency;
 };
 
-void build_index(float* base, size_t base_number, size_t vecdim)
-{
-    const int efConstruction = 150;
-    const int M = 16;
-
-    HierarchicalNSW<float> *appr_alg;
-    InnerProductSpace ipspace(vecdim);
-    appr_alg = new HierarchicalNSW<float>(&ipspace, base_number, M, efConstruction);
-
-    appr_alg->addPoint(base, 0);
-    #pragma omp parallel for
-    for(int i = 1; i < base_number; ++i){
-        appr_alg->addPoint(base + 1ll*vecdim*i, i);
-    }
-
-    char path_index[1024] = "files/hnsw.index";
-    appr_alg->saveIndex(path_index);
-}
+// void build_index(float* base, size_t base_number, size_t vecdim)
+// {
+//     const int efConstruction = 150;
+//     const int M = 16;
+//
+//     HierarchicalNSW<float> *appr_alg;
+//     InnerProductSpace ipspace(vecdim);
+//     appr_alg = new HierarchicalNSW<float>(&ipspace, base_number, M, efConstruction);
+//
+//     appr_alg->addPoint(base, 0);
+//     #pragma omp parallel for
+//     for(int i = 1; i < base_number; ++i){
+//         appr_alg->addPoint(base + 1ll*vecdim*i, i);
+//     }
+//
+//     char path_index[1024] = "files/hnsw.index";
+//     appr_alg->saveIndex(path_index);
+// }
 
 int main(int argc, char *argv[])
 {
@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
         struct timeval val;
         gettimeofday(&val, NULL);
 
-        auto res = flat_search(base, test_query + i*vecdim, base_number, vecdim, k);
+        auto res = flat_simd_search(base, test_query + i*vecdim, base_number, vecdim, k);
 
         struct timeval newVal;
         gettimeofday(&newVal, NULL);
