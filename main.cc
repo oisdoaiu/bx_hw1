@@ -4,13 +4,14 @@
 #include <iostream>
 #include <fstream>
 #include <set>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 #include <sys/time.h>
 #include <omp.h>
-// #include "hnswlib/hnswlib/hnswlib.h"
 #include "flat_scan.h"
 #include "flat_simd.h"
-
-// using namespace hnswlib;
+#include "sq_simd.h"
 
 template<typename T>
 T *LoadData(std::string data_path, size_t& n, size_t& d)
@@ -32,55 +33,44 @@ T *LoadData(std::string data_path, size_t& n, size_t& d)
     return data;
 }
 
-struct SearchResult{
+struct SearchResult
+{
     float recall;
-    int64_t latency;
+    int64_t latency; // 单位us
 };
-
-// void build_index(float* base, size_t base_number, size_t vecdim)
-// {
-//     const int efConstruction = 150;
-//     const int M = 16;
-//
-//     HierarchicalNSW<float> *appr_alg;
-//     InnerProductSpace ipspace(vecdim);
-//     appr_alg = new HierarchicalNSW<float>(&ipspace, base_number, M, efConstruction);
-//
-//     appr_alg->addPoint(base, 0);
-//     #pragma omp parallel for
-//     for(int i = 1; i < base_number; ++i){
-//         appr_alg->addPoint(base + 1ll*vecdim*i, i);
-//     }
-//
-//     char path_index[1024] = "files/hnsw.index";
-//     appr_alg->saveIndex(path_index);
-// }
 
 int main(int argc, char *argv[])
 {
     size_t test_number = 0, base_number = 0;
     size_t test_gt_d = 0, vecdim = 0;
 
-    std::string data_path = "/home/oisdoaiu/并行/data/";
+    std::string data_path = "data/";
     auto test_query = LoadData<float>(data_path + "DEEP100K.query.fbin", test_number, vecdim);
     auto test_gt = LoadData<int>(data_path + "DEEP100K.gt.query.100k.top100.bin", test_number, test_gt_d);
     auto base = LoadData<float>(data_path + "DEEP100K.base.100k.fbin", base_number, vecdim);
+    // 只测试前2000条查询
     test_number = 2000;
+
+    build_index(base, base_number, vecdim);
 
     const size_t k = 10;
 
     std::vector<SearchResult> results;
     results.resize(test_number);
 
-    for(int i = 0; i < test_number; ++i){
+
+    // 查询测试代码
+    for(int i = 0; i < test_number; ++i) {
         const unsigned long Converter = 1000 * 1000;
         struct timeval val;
-        gettimeofday(&val, NULL);
+        int ret = gettimeofday(&val, NULL);
 
-        auto res = flat_simd_search(base, test_query + i*vecdim, base_number, vecdim, k);
+        // 该文件已有代码中你只能修改该函数的调用方式
+        // 可以任意修改函数名，函数参数或者改为调用成员函数，但是不能修改函数返回值。
+        auto res = flat_search(base, test_query + i*vecdim, base_number, vecdim, k);
 
         struct timeval newVal;
-        gettimeofday(&newVal, NULL);
+        ret = gettimeofday(&newVal, NULL);
         int64_t diff = (newVal.tv_sec * Converter + newVal.tv_usec) - (val.tv_sec * Converter + val.tv_usec);
 
         std::set<uint32_t> gtset;
@@ -90,7 +80,7 @@ int main(int argc, char *argv[])
         }
 
         size_t acc = 0;
-        while(res.size()){
+        while (res.size()) {   
             int x = res.top().second;
             if(gtset.find(x) != gtset.end()){
                 ++acc;
@@ -103,11 +93,12 @@ int main(int argc, char *argv[])
     }
 
     float avg_recall = 0, avg_latency = 0;
-    for(int i = 0; i < test_number; ++i){
+    for(int i = 0; i < test_number; ++i) {
         avg_recall += results[i].recall;
         avg_latency += results[i].latency;
     }
 
+    // 浮点误差可能导致一些精确算法平均recall不是1
     std::cout << "average recall: "<<avg_recall / test_number<<"\n";
     std::cout << "average latency (us): "<<avg_latency / test_number<<"\n";
     return 0;
