@@ -175,6 +175,14 @@ size_t vecdim, size_t M, size_t Ks){
     }
 }
 
+inline void encode_pq_soa(const uint8_t* codes_aos, uint8_t* codes_soa, size_t base_number, size_t M){
+    for(size_t m = 0; m < M; m++){
+        for(size_t i = 0; i < base_number; i++){
+            codes_soa[m * base_number + i] = codes_aos[i * M + m];
+        }
+    }
+}
+
 inline std::priority_queue<std::pair<float, int>> pq_search(
     const float* base_float,
     const uint8_t* codes,
@@ -192,23 +200,135 @@ inline std::priority_queue<std::pair<float, int>> pq_search(
 
     std::priority_queue<std::pair<float, int>> coarse_heap;
 
-    for(size_t i = 0; i < base_number; i++){
-        const uint8_t* code = codes + i * M;
-        float ip_sum = 0.0f;
+#ifdef __AVX2__
+    const size_t V = 8;
+    __m256i zero32 = _mm256_setzero_si256();
+    for(size_t i = 0; i + V <= base_number; i += V){
+        __m256 acc = _mm256_setzero_ps();
         for(size_t m = 0; m < M; m++){
-            ip_sum += lut[m * Ks + code[m]];
+            const uint8_t* codes_m = codes + m * base_number;
+            __m128i codes8 = _mm_loadl_epi64((const __m128i*)(codes_m + i));
+            __m256i indices = _mm256_cvtepu8_epi32(codes8);
+            __m256 lut_vals = _mm256_i32gather_ps(lut.data() + m * Ks, indices, 4);
+            acc = _mm256_add_ps(acc, lut_vals);
         }
-        float dist_approx = 1.0f - ip_sum;
-
-        if(coarse_heap.size() < p){
-            coarse_heap.push(std::make_pair(dist_approx, (int)i));
-        }
-        
-        else if(dist_approx < coarse_heap.top().first){
-            coarse_heap.pop();
-            coarse_heap.push(std::make_pair(dist_approx, (int)i));
+        __m256 dists = _mm256_sub_ps(_mm256_set1_ps(1.0f), acc);
+        float tmp[8];
+        _mm256_storeu_ps(tmp, dists);
+        for(size_t v = 0; v < V; v++){
+            float d = tmp[v];
+            int idx = (int)(i + v);
+            if(coarse_heap.size() < p){
+                coarse_heap.push(std::make_pair(d, idx));
+            }
+            else if(d < coarse_heap.top().first){
+                coarse_heap.pop();
+                coarse_heap.push(std::make_pair(d, idx));
+            }
         }
     }
+    for(size_t i = (base_number / V) * V; i < base_number; i++){
+        float ip_sum = 0.0f;
+        for(size_t m = 0; m < M; m++){
+            ip_sum += lut[m * Ks + codes[m * base_number + i]];
+        }
+        float d = 1.0f - ip_sum;
+        if(coarse_heap.size() < p){
+            coarse_heap.push(std::make_pair(d, (int)i));
+        }
+        else if(d < coarse_heap.top().first){
+            coarse_heap.pop();
+            coarse_heap.push(std::make_pair(d, (int)i));
+        }
+    }
+
+#elif defined(__ARM_NEON)
+    const size_t V = 4;
+    for(size_t i = 0; i + V <= base_number; i += V){
+        float32x4_t acc = vdupq_n_f32(0.0f);
+        for(size_t m = 0; m < M; m++){
+            const uint8_t* codes_m = codes + m * base_number;
+            uint32_t c0 = codes_m[i+0], c1 = codes_m[i+1], c2 = codes_m[i+2], c3 = codes_m[i+3];
+            const float* lut_m = lut.data() + m * Ks;
+            float32x4_t lv = vdupq_n_f32(0.0f);
+            lv = vld1q_lane_f32(lut_m + c0, lv, 0);
+            lv = vld1q_lane_f32(lut_m + c1, lv, 1);
+            lv = vld1q_lane_f32(lut_m + c2, lv, 2);
+            lv = vld1q_lane_f32(lut_m + c3, lv, 3);
+            acc = vaddq_f32(acc, lv);
+        }
+        float32x4_t ones = vdupq_n_f32(1.0f);
+        float32x4_t dists = vsubq_f32(ones, acc);
+        float tmp[4];
+        vst1q_f32(tmp, dists);
+        for(size_t v = 0; v < V; v++){
+            float d = tmp[v];
+            int idx = (int)(i + v);
+            if(coarse_heap.size() < p){
+                coarse_heap.push(std::make_pair(d, idx));
+            }
+            else if(d < coarse_heap.top().first){
+                coarse_heap.pop();
+                coarse_heap.push(std::make_pair(d, idx));
+            }
+        }
+    }
+    for(size_t i = (base_number / V) * V; i < base_number; i++){
+        float ip_sum = 0.0f;
+        for(size_t m = 0; m < M; m++){
+            ip_sum += lut[m * Ks + codes[m * base_number + i]];
+        }
+        float d = 1.0f - ip_sum;
+        if(coarse_heap.size() < p){
+            coarse_heap.push(std::make_pair(d, (int)i));
+        }
+        else if(d < coarse_heap.top().first){
+            coarse_heap.pop();
+            coarse_heap.push(std::make_pair(d, (int)i));
+        }
+    }
+
+#else
+    const size_t V = 4;
+    for(size_t i = 0; i + V <= base_number; i += V){
+        __m128 acc = _mm_setzero_ps();
+        for(size_t m = 0; m < M; m++){
+            const uint8_t* codes_m = codes + m * base_number;
+            uint32_t c0 = codes_m[i+0], c1 = codes_m[i+1], c2 = codes_m[i+2], c3 = codes_m[i+3];
+            const float* lut_m = lut.data() + m * Ks;
+            __m128 lv = _mm_setr_ps(lut_m[c0], lut_m[c1], lut_m[c2], lut_m[c3]);
+            acc = _mm_add_ps(acc, lv);
+        }
+        __m128 dists = _mm_sub_ps(_mm_set1_ps(1.0f), acc);
+        float tmp[4];
+        _mm_storeu_ps(tmp, dists);
+        for(size_t v = 0; v < V; v++){
+            float d = tmp[v];
+            int idx = (int)(i + v);
+            if(coarse_heap.size() < p){
+                coarse_heap.push(std::make_pair(d, idx));
+            }
+            else if(d < coarse_heap.top().first){
+                coarse_heap.pop();
+                coarse_heap.push(std::make_pair(d, idx));
+            }
+        }
+    }
+    for(size_t i = (base_number / V) * V; i < base_number; i++){
+        float ip_sum = 0.0f;
+        for(size_t m = 0; m < M; m++){
+            ip_sum += lut[m * Ks + codes[m * base_number + i]];
+        }
+        float d = 1.0f - ip_sum;
+        if(coarse_heap.size() < p){
+            coarse_heap.push(std::make_pair(d, (int)i));
+        }
+        else if(d < coarse_heap.top().first){
+            coarse_heap.pop();
+            coarse_heap.push(std::make_pair(d, (int)i));
+        }
+    }
+#endif
 
     std::vector<int> candidates;
     candidates.reserve(p);
@@ -252,8 +372,10 @@ inline void build_pq(const float* base, size_t base_number, size_t vecdim){
     g.centroids.resize(g.M * g.Ks * dsub);
     train_pq_codebook(base, base_number, vecdim, g.centroids.data(), g.M, g.Ks, 15);
 
+    std::vector<uint8_t> codes_aos(base_number * g.M);
+    encode_pq(base, codes_aos.data(), g.centroids.data(), base_number, vecdim, g.M, g.Ks);
     g.codes.resize(base_number * g.M);
-    encode_pq(base, g.codes.data(), g.centroids.data(), base_number, vecdim, g.M, g.Ks);
+    encode_pq_soa(codes_aos.data(), g.codes.data(), base_number, g.M);
 }
 
 inline std::priority_queue<std::pair<float, int>> pq_solve(

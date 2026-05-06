@@ -52,11 +52,13 @@ int main(){
 
         size_t dsub = vecdim / M;
         std::vector<float> centroids(M * Ks * dsub);
-        std::vector<uint8_t> codes(base_number * M);
+        std::vector<uint8_t> codes_aos(base_number * M);
+        std::vector<uint8_t> codes_soa(base_number * M);
 
         std::cerr << "training M="<<M<<" (dsub="<<dsub<<")...\n";
         train_pq_codebook(base, base_number, vecdim, centroids.data(), M, Ks, 15);
-        encode_pq(base, codes.data(), centroids.data(), base_number, vecdim, M, Ks);
+        encode_pq(base, codes_aos.data(), centroids.data(), base_number, vecdim, M, Ks);
+        encode_pq_soa(codes_aos.data(), codes_soa.data(), base_number, M);
         std::cerr << "done\n";
 
         for(size_t pi=0; pi<p_vals.size(); pi++){
@@ -68,7 +70,7 @@ int main(){
                 struct timeval val;
                 gettimeofday(&val, NULL);
 
-                auto res = pq_search(base, codes.data(), centroids.data(),
+                auto res = pq_search(base, codes_soa.data(), centroids.data(),
                                      test_query + qi*vecdim, base_number, vecdim, M, Ks, k, p);
 
                 struct timeval newVal;
