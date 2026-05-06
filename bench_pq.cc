@@ -39,14 +39,15 @@ int main(){
     size_t Ks = 256;
 
     std::ofstream out("pq_results.txt");
-    out << "=== PQ-SIMD Benchmark: M x p ===\n";
+    out << "=== PQ-SIMD Cross-Centroid Benchmark: M x p ===\n";
     out << "vecdim="<<vecdim<<" base_number="<<base_number<<" test_number="<<test_number<<" Ks="<<Ks<<" k="<<k<<"\n\n";
 
     std::cout << "M\\p";
-    for(auto p : p_vals) std::cout << "\t" << p;
+    for(size_t pi=0; pi<p_vals.size(); pi++) std::cout << "\t" << p_vals[pi];
     std::cout << "\n";
 
-    for(auto M : M_vals){
+    for(size_t mi=0; mi<M_vals.size(); mi++){
+        size_t M = M_vals[mi];
         std::cout << M;
 
         size_t dsub = vecdim / M;
@@ -56,9 +57,10 @@ int main(){
         std::cerr << "training M="<<M<<" (dsub="<<dsub<<")...\n";
         train_pq_codebook(base, base_number, vecdim, centroids.data(), M, Ks, 15);
         encode_pq(base, codes.data(), centroids.data(), base_number, vecdim, M, Ks);
-        std::cerr << "training done\n";
+        std::cerr << "done\n";
 
-        for(auto p : p_vals){
+        for(size_t pi=0; pi<p_vals.size(); pi++){
+            size_t p = p_vals[pi];
             float sum_recall = 0, sum_latency = 0;
 
             for(int qi = 0; qi < test_number; qi++){
@@ -104,6 +106,6 @@ int main(){
     }
 
     out.close();
-    std::cerr << "\nResults saved to pq_results.txt\n";
+    std::cerr << "\nsaved to pq_results.txt\n";
     return 0;
 }

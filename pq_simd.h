@@ -117,8 +117,60 @@ size_t vecdim, size_t M, size_t Ks){
         const float* query_sub = query + m * dsub;
         const float* cent_m = centroids + m * Ks * dsub;
         float* lut_m = lut + m * Ks;
-        for(size_t k = 0; k < Ks; k++){
-            lut_m[k] = 1.0f - InnerProductSIMD(query_sub, cent_m + k * dsub, dsub);
+
+#ifdef __ARM_NEON
+        size_t k=0;
+        for(; k+4<=Ks; k+=4){
+            float32x4_t acc = vdupq_n_f32(0.0f);
+            for(size_t d = 0; d < dsub; d++){
+                float32x4_t qb = vdupq_n_f32(query_sub[d]);
+                float32x4_t cd = vdupq_n_f32(0.0f);
+                cd = vld1q_lane_f32(cent_m + (k+0)*dsub + d, cd, 0);
+                cd = vld1q_lane_f32(cent_m + (k+1)*dsub + d, cd, 1);
+                cd = vld1q_lane_f32(cent_m + (k+2)*dsub + d, cd, 2);
+                cd = vld1q_lane_f32(cent_m + (k+3)*dsub + d, cd, 3);
+                acc = vmlaq_f32(acc, qb, cd);
+            }
+            vst1q_f32(lut_m + k, acc);
+        }
+
+#elif defined(__AVX2__)
+        size_t k=0;
+        for(; k+8<=Ks; k+=8){
+            __m256 acc = _mm256_setzero_ps();
+            for(size_t d = 0; d < dsub; d++){
+                __m256 qb = _mm256_set1_ps(query_sub[d]);
+                __m256 cd = _mm256_setr_ps(
+                    cent_m[(k+0)*dsub+d], cent_m[(k+1)*dsub+d],
+                    cent_m[(k+2)*dsub+d], cent_m[(k+3)*dsub+d],
+                    cent_m[(k+4)*dsub+d], cent_m[(k+5)*dsub+d],
+                    cent_m[(k+6)*dsub+d], cent_m[(k+7)*dsub+d]);
+                acc = _mm256_add_ps(acc, _mm256_mul_ps(qb, cd));
+            }
+            _mm256_storeu_ps(lut_m + k, acc);
+        }
+
+#else
+        size_t k=0;
+        for(; k+4<=Ks; k+=4){
+            __m128 acc = _mm_setzero_ps();
+            for(size_t d = 0; d < dsub; d++){
+                __m128 qb = _mm_set1_ps(query_sub[d]);
+                __m128 cd = _mm_setr_ps(
+                    cent_m[(k+0)*dsub+d], cent_m[(k+1)*dsub+d],
+                    cent_m[(k+2)*dsub+d], cent_m[(k+3)*dsub+d]);
+                acc = _mm_add_ps(acc, _mm_mul_ps(qb, cd));
+            }
+            _mm_storeu_ps(lut_m + k, acc);
+        }
+#endif
+
+        for(; k<Ks; k++){
+            float ip = 0.0f;
+            for(size_t d = 0; d < dsub; d++){
+                ip += query_sub[d] * cent_m[k*dsub + d];
+            }
+            lut_m[k] = ip;
         }
     }
 }
@@ -180,30 +232,39 @@ inline std::priority_queue<std::pair<float, int>> pq_search(
     return result;
 }
 
-inline std::vector<uint8_t> g_pq_codes;
-inline std::vector<float> g_pq_centroids;
-inline size_t g_pq_M, g_pq_Ks;
+struct PQGlobal{
+    std::vector<uint8_t> codes;
+    std::vector<float> centroids;
+    size_t M, Ks;
+};
 
-inline void build_index(const float* base, size_t base_number, size_t vecdim){
-    g_pq_M = 24;
-    g_pq_Ks = 256;
-    size_t dsub = vecdim / g_pq_M;
-
-    g_pq_centroids.resize(g_pq_M * g_pq_Ks * dsub);
-    train_pq_codebook(base, base_number, vecdim, g_pq_centroids.data(), g_pq_M, g_pq_Ks, 15);
-
-    g_pq_codes.resize(base_number * g_pq_M);
-    encode_pq(base, g_pq_codes.data(), g_pq_centroids.data(), base_number, vecdim, g_pq_M, g_pq_Ks);
+inline PQGlobal& pq_global(){
+    static PQGlobal g;
+    return g;
 }
 
-inline std::priority_queue<std::pair<float, int>> flat_search(
-    const float* base, 
+inline void build_pq(const float* base, size_t base_number, size_t vecdim){
+    PQGlobal& g = pq_global();
+    g.M = 8;
+    g.Ks = 256;
+    size_t dsub = vecdim / g.M;
+
+    g.centroids.resize(g.M * g.Ks * dsub);
+    train_pq_codebook(base, base_number, vecdim, g.centroids.data(), g.M, g.Ks, 15);
+
+    g.codes.resize(base_number * g.M);
+    encode_pq(base, g.codes.data(), g.centroids.data(), base_number, vecdim, g.M, g.Ks);
+}
+
+inline std::priority_queue<std::pair<float, int>> pq_solve(
+    const float* base,
     const float* query,
-    size_t base_number, 
-    size_t vecdim, 
+    size_t base_number,
+    size_t vecdim,
     size_t k)
 {
-    return pq_search(base, g_pq_codes.data(), g_pq_centroids.data(), query, base_number, vecdim, g_pq_M, g_pq_Ks, k, 100);
+    PQGlobal& g = pq_global();
+    return pq_search(base, g.codes.data(), g.centroids.data(), query, base_number, vecdim, g.M, g.Ks, k, 100);
 }
 
-#endif // PQ_SIMD_H
+#endif

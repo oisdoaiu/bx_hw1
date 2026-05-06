@@ -184,58 +184,12 @@ inline uint32_t InnerProductSQ(const uint8_t* x, const uint8_t* y, size_t vecdim
 
 #else
 #include <emmintrin.h>
-#include <tmmintrin.h>
 
 inline uint32_t InnerProductSQ(const uint8_t* x, const uint8_t* y, size_t vecdim){
-    __m128i sum0 = _mm_setzero_si128();
-    __m128i sum1 = _mm_setzero_si128();
-    __m128i sum2 = _mm_setzero_si128();
-    __m128i sum3 = _mm_setzero_si128();
+    __m128i sum = _mm_setzero_si128();
     const __m128i zero = _mm_setzero_si128();
 
     size_t i=0;
-    for(; i+64<=vecdim; i+=64){
-        __m128i x0 = _mm_loadu_si128((const __m128i*)(x+i));
-        __m128i y0 = _mm_loadu_si128((const __m128i*)(y+i));
-        __m128i x1 = _mm_loadu_si128((const __m128i*)(x+i+16));
-        __m128i y1 = _mm_loadu_si128((const __m128i*)(y+i+16));
-        __m128i x2 = _mm_loadu_si128((const __m128i*)(x+i+32));
-        __m128i y2 = _mm_loadu_si128((const __m128i*)(y+i+32));
-        __m128i x3 = _mm_loadu_si128((const __m128i*)(x+i+48));
-        __m128i y3 = _mm_loadu_si128((const __m128i*)(y+i+48));
-
-        __m128i x0_lo = _mm_unpacklo_epi8(x0, zero);
-        __m128i x0_hi = _mm_unpackhi_epi8(x0, zero);
-        __m128i y0_lo = _mm_unpacklo_epi8(y0, zero);
-        __m128i y0_hi = _mm_unpackhi_epi8(y0, zero);
-        sum0 = _mm_add_epi32(sum0, _mm_madd_epi16(x0_lo, y0_lo));
-        sum0 = _mm_add_epi32(sum0, _mm_madd_epi16(x0_hi, y0_hi));
-
-        __m128i x1_lo = _mm_unpacklo_epi8(x1, zero);
-        __m128i x1_hi = _mm_unpackhi_epi8(x1, zero);
-        __m128i y1_lo = _mm_unpacklo_epi8(y1, zero);
-        __m128i y1_hi = _mm_unpackhi_epi8(y1, zero);
-        sum1 = _mm_add_epi32(sum1, _mm_madd_epi16(x1_lo, y1_lo));
-        sum1 = _mm_add_epi32(sum1, _mm_madd_epi16(x1_hi, y1_hi));
-
-        __m128i x2_lo = _mm_unpacklo_epi8(x2, zero);
-        __m128i x2_hi = _mm_unpackhi_epi8(x2, zero);
-        __m128i y2_lo = _mm_unpacklo_epi8(y2, zero);
-        __m128i y2_hi = _mm_unpackhi_epi8(y2, zero);
-        sum2 = _mm_add_epi32(sum2, _mm_madd_epi16(x2_lo, y2_lo));
-        sum2 = _mm_add_epi32(sum2, _mm_madd_epi16(x2_hi, y2_hi));
-
-        __m128i x3_lo = _mm_unpacklo_epi8(x3, zero);
-        __m128i x3_hi = _mm_unpackhi_epi8(x3, zero);
-        __m128i y3_lo = _mm_unpacklo_epi8(y3, zero);
-        __m128i y3_hi = _mm_unpackhi_epi8(y3, zero);
-        sum3 = _mm_add_epi32(sum3, _mm_madd_epi16(x3_lo, y3_lo));
-        sum3 = _mm_add_epi32(sum3, _mm_madd_epi16(x3_hi, y3_hi));
-    }
-    sum0 = _mm_add_epi32(sum0, sum1);
-    sum2 = _mm_add_epi32(sum2, sum3);
-    sum0 = _mm_add_epi32(sum0, sum2);
-
     for(; i+16<=vecdim; i+=16){
         __m128i xv = _mm_loadu_si128((const __m128i*)(x+i));
         __m128i yv = _mm_loadu_si128((const __m128i*)(y+i));
@@ -243,13 +197,17 @@ inline uint32_t InnerProductSQ(const uint8_t* x, const uint8_t* y, size_t vecdim
         __m128i x_hi = _mm_unpackhi_epi8(xv, zero);
         __m128i y_lo = _mm_unpacklo_epi8(yv, zero);
         __m128i y_hi = _mm_unpackhi_epi8(yv, zero);
-        sum0 = _mm_add_epi32(sum0, _mm_madd_epi16(x_lo, y_lo));
-        sum0 = _mm_add_epi32(sum0, _mm_madd_epi16(x_hi, y_hi));
+        sum = _mm_add_epi32(sum, _mm_madd_epi16(x_lo, y_lo));
+        sum = _mm_add_epi32(sum, _mm_madd_epi16(x_hi, y_hi));
     }
 
-    sum0 = _mm_hadd_epi32(sum0, sum0);
-    sum0 = _mm_hadd_epi32(sum0, sum0);
-    uint32_t result = _mm_cvtsi128_si32(sum0);
+    uint32_t result = _mm_cvtsi128_si32(sum);
+    __m128i tmp = _mm_shuffle_epi32(sum, _MM_SHUFFLE(1, 1, 1, 1));
+    result += _mm_cvtsi128_si32(tmp);
+    tmp = _mm_shuffle_epi32(sum, _MM_SHUFFLE(2, 2, 2, 2));
+    result += _mm_cvtsi128_si32(tmp);
+    tmp = _mm_shuffle_epi32(sum, _MM_SHUFFLE(3, 3, 3, 3));
+    result += _mm_cvtsi128_si32(tmp);
 
     for(; i<vecdim; i++){
         result += (uint32_t)x[i] * (uint32_t)y[i];
@@ -314,24 +272,33 @@ inline std::priority_queue<std::pair<float, int>> sq_search(
     return result;
 }
 
-inline std::vector<uint8_t> g_base_sq;
-inline std::vector<uint32_t> g_sum_qi;
-inline float g_gmin, g_gscale;
+struct SQContext{
+    std::vector<uint8_t> base_sq;
+    std::vector<uint32_t> sum_qi;
+    float gmin, gscale;
+};
+
+inline SQContext& sq_ctx(){
+    static SQContext ctx;
+    return ctx;
+}
 
 inline void build_index(const float* base, size_t base_number, size_t vecdim){
-    g_base_sq.resize(base_number * vecdim);
-    g_sum_qi.resize(base_number);
-    build_sq_index(base, g_base_sq.data(), g_sum_qi.data(), g_gmin, g_gscale, base_number, vecdim);
+    SQContext& ctx = sq_ctx();
+    ctx.base_sq.resize(base_number * vecdim);
+    ctx.sum_qi.resize(base_number);
+    build_sq_index(base, ctx.base_sq.data(), ctx.sum_qi.data(), ctx.gmin, ctx.gscale, base_number, vecdim);
 }
 
 inline std::priority_queue<std::pair<float, int>> flat_search(
-    const float* base, 
-    const float* query, 
-    size_t base_number, 
-    size_t vecdim, 
+    const float* base,
+    const float* query,
+    size_t base_number,
+    size_t vecdim,
     size_t k)
 {
-    return sq_search(base, g_base_sq.data(), g_sum_qi.data(), query, g_gmin, g_gscale, base_number, vecdim, k, 50);
+    SQContext& ctx = sq_ctx();
+    return sq_search(base, ctx.base_sq.data(), ctx.sum_qi.data(), query, ctx.gmin, ctx.gscale, base_number, vecdim, k, 50);
 }
 
 #endif // SQ_SIMD_H
