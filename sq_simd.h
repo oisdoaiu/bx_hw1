@@ -7,7 +7,15 @@
 #include <cstring>
 #include <algorithm>
 
-inline void build_sq_index(const float* base_data, uint8_t* sq_data, uint32_t* sum_qi, float& gmin, float& gscale, size_t base_number, size_t vecdim){
+inline void build_sq_index(
+    const float* base_data,
+    uint8_t* sq_data, 
+    uint32_t* sum_qi, 
+    float& gmin, 
+    float& gscale, 
+    size_t base_number, 
+    size_t vecdim)
+{
     gmin = base_data[0];
     float gmax = base_data[0];
     for(size_t i = 1; i < base_number*vecdim; i++){
@@ -32,7 +40,14 @@ inline void build_sq_index(const float* base_data, uint8_t* sq_data, uint32_t* s
     }
 }
 
-inline void quantize_query(const float* query, uint8_t* query_sq, uint32_t& sum_qq, float gmin, float gscale, size_t vecdim){
+inline void quantize_query(
+    const float* query, 
+    uint8_t* query_sq, 
+    uint32_t& sum_qq, 
+    float gmin, 
+    float gscale, 
+    size_t vecdim)
+{
     sum_qq = 0;
     for(size_t d = 0; d < vecdim; d++){
         int q = (int)((query[d] - gmin) * gscale + 0.5f);
@@ -244,15 +259,14 @@ inline uint32_t InnerProductSQ(const uint8_t* x, const uint8_t* y, size_t vecdim
 #endif
 
 inline std::priority_queue<std::pair<float, int>> sq_search(
-    const float* base_float,
-    const uint8_t* base_sq,
-    const uint32_t* sum_qi,
-    const float* query_float,
-    float gmin,
-    float gscale,
-    size_t base_number,
-    size_t vecdim,
-    size_t k,
+    const float* base_float, 
+    const uint8_t* base_sq, 
+    const uint32_t* sum_qi, 
+    const float* query_float, 
+    float gmin, float gscale, 
+    size_t base_number, 
+    size_t vecdim, 
+    size_t k, 
     size_t p)
 {
     uint32_t sum_qq;
@@ -271,7 +285,8 @@ inline std::priority_queue<std::pair<float, int>> sq_search(
 
         if(coarse_heap.size() < p){
             coarse_heap.push(std::make_pair(dist_approx, (int)i));
-        }else if(dist_approx < coarse_heap.top().first){
+        }
+        else if(dist_approx < coarse_heap.top().first){
             coarse_heap.pop();
             coarse_heap.push(std::make_pair(dist_approx, (int)i));
         }
@@ -289,7 +304,8 @@ inline std::priority_queue<std::pair<float, int>> sq_search(
         float dist = InnerProductSIMD(base_float + (size_t)idx*vecdim, query_float, vecdim);
         if(result.size() < k){
             result.push(std::make_pair(dist, idx));
-        }else if(dist < result.top().first){
+        }
+        else if(dist < result.top().first){
             result.pop();
             result.push(std::make_pair(dist, idx));
         }
@@ -309,11 +325,13 @@ inline void build_index(const float* base, size_t base_number, size_t vecdim){
 }
 
 inline std::priority_queue<std::pair<float, int>> flat_search(
-    const float* base, const float* query,
-    size_t base_number, size_t vecdim, size_t k)
+    const float* base, 
+    const float* query, 
+    size_t base_number, 
+    size_t vecdim, 
+    size_t k)
 {
-    return sq_search(base, g_base_sq.data(), g_sum_qi.data(),
-                     query, g_gmin, g_gscale, base_number, vecdim, k, 50);
+    return sq_search(base, g_base_sq.data(), g_sum_qi.data(), query, g_gmin, g_gscale, base_number, vecdim, k, 50);
 }
 
 #endif // SQ_SIMD_H

@@ -1,0 +1,33 @@
+=== PQ-SIMD Benchmark: M x p ===
+vecdim=96 base_number=100000 test_number=2000 Ks=256 k=10
+
+M=4 p=20 recall=0.179101 latency_us=416.362 dsub=24
+M=4 p=50 recall=0.31275 latency_us=385.657 dsub=24
+M=4 p=100 recall=0.4472 latency_us=417.535 dsub=24
+M=4 p=200 recall=0.600751 latency_us=527.031 dsub=24
+M=4 p=500 recall=0.797803 latency_us=712.669 dsub=24
+M=6 p=20 recall=0.28325 latency_us=526.05 dsub=16
+M=6 p=50 recall=0.45525 latency_us=474.967 dsub=16
+M=6 p=100 recall=0.6045 latency_us=590.674 dsub=16
+M=6 p=200 recall=0.747752 latency_us=633.12 dsub=16
+M=6 p=500 recall=0.891804 latency_us=866.076 dsub=16
+M=8 p=20 recall=0.37615 latency_us=610.178 dsub=12
+M=8 p=50 recall=0.5706 latency_us=628.123 dsub=12
+M=8 p=100 recall=0.717001 latency_us=690.099 dsub=12
+M=8 p=200 recall=0.842904 latency_us=791.646 dsub=12
+M=8 p=500 recall=0.947804 latency_us=1008.3 dsub=12
+M=12 p=20 recall=0.5185 latency_us=862.651 dsub=8
+M=12 p=50 recall=0.724002 latency_us=834.479 dsub=8
+M=12 p=100 recall=0.852103 latency_us=941.603 dsub=8
+M=12 p=200 recall=0.934654 latency_us=997.901 dsub=8
+M=12 p=500 recall=0.986802 latency_us=1162.81 dsub=8
+M=16 p=20 recall=0.6162 latency_us=1115.96 dsub=6
+M=16 p=50 recall=0.823254 latency_us=1129.67 dsub=6
+M=16 p=100 recall=0.924105 latency_us=1210.41 dsub=6
+M=16 p=200 recall=0.974453 latency_us=975.522 dsub=6
+M=16 p=500 recall=0.995951 latency_us=1538.93 dsub=6
+M=24 p=20 recall=0.683401 latency_us=1703.69 dsub=4
+M=24 p=50 recall=0.873705 latency_us=1526.9 dsub=4
+M=24 p=100 recall=0.953454 latency_us=1145.26 dsub=4
+M=24 p=200 recall=0.986202 latency_us=1504.25 dsub=4
+M=24 p=500 recall=0.99835 latency_us=1795.15 dsub=4
