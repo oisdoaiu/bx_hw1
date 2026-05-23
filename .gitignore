@@ -10,9 +10,6 @@ pq_results.txt
 arm_results.txt
 实验分析.txt
 
-# 项目指南保留
-!CLAUDE.md
-
 # ===== 编译产物 =====
 *.o
 *.out
