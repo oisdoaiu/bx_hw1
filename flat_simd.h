@@ -1,5 +1,5 @@
-#ifndef FLAT_SIMD_H
-#define FLAT_SIMD_H
+#ifndef FLAT_SEARCH_H
+#define FLAT_SEARCH_H
 
 #include "simd_wrapper.h"
 #include <queue>
@@ -41,7 +41,13 @@ inline float InnerProductSIMD(const float* x, const float* y, size_t vecdim){
     return 1.0f-ip;
 }
 
-inline std::priority_queue<std::pair<float, int>> flat_simd_search(const float* base, const float* query, size_t base_number, size_t vecdim, size_t k){
+inline std::priority_queue<std::pair<float, int>> flat_simd_search(
+    const float* base,
+    const float* query,
+    size_t base_number,
+    size_t vecdim,
+    size_t k)
+{
     std::priority_queue<std::pair<float, int>> result;
 
     for(size_t i = 0; i < base_number; i++){
@@ -49,9 +55,7 @@ inline std::priority_queue<std::pair<float, int>> flat_simd_search(const float* 
 
         if(result.size() < k){
             result.push(std::make_pair(dist, static_cast<int>(i)));
-        }
-
-        else if(dist < result.top().first){
+        }else if(dist < result.top().first){
             result.pop();
             result.push(std::make_pair(dist, static_cast<int>(i)));
         }
@@ -60,4 +64,4 @@ inline std::priority_queue<std::pair<float, int>> flat_simd_search(const float* 
     return result;
 }
 
-#endif
+#endif // FLAT_SEARCH_H

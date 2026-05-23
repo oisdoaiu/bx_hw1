@@ -1,0 +1,40 @@
+# ===== 文档/报告/分析 =====
+*.pdf
+*.md
+实验报告.tex
+实验过程记录.md
+ANN_Lab3_任务分析.md
+benchmark_results.md
+pq_benchmark.md
+pq_results.txt
+arm_results.txt
+实验分析.txt
+
+# 项目指南保留
+!CLAUDE.md
+
+# ===== 编译产物 =====
+*.o
+*.out
+
+# 可执行文件（无扩展名或已知命名模式）
+main
+main_avx2
+main_sse
+main_test
+main_flat_avx2
+main_flat_sse
+main_arm64
+bench_pq
+test_arm64
+test_x86_64
+
+# ===== 数据 =====
+data/
+
+# ===== IDE/编辑器 =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

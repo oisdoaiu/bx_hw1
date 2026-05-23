@@ -11,7 +11,7 @@
 #include <omp.h>
 #include "flat_scan.h"
 #include "flat_simd.h"
-#include "pq_simd.h"
+#include "pq_gather.h"
 
 template<typename T>
 T *LoadData(std::string data_path, size_t& n, size_t& d)
