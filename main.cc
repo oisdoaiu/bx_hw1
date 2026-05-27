@@ -9,9 +9,14 @@
 #include <sstream>
 #include <sys/time.h>
 #include <omp.h>
+#include "hnswlib/hnswlib/hnswlib.h"
 #include "flat_scan.h"
-#include "flat_simd.h"
-#include "pq_gather.h"
+// #include "flat_simd.h"
+#include "sq_simd.h"
+#include "pq_simd.h"
+// 可以自行添加需要的头文件
+
+using namespace hnswlib;
 
 template<typename T>
 T *LoadData(std::string data_path, size_t& n, size_t& d)
@@ -39,26 +44,51 @@ struct SearchResult
     int64_t latency; // 单位us
 };
 
+void build_index(float* base, size_t base_number, size_t vecdim)
+{
+    const int efConstruction = 150; // 为防止索引构建时间过长，efc建议设置200以下
+    const int M = 16; // M建议设置为16以下
+
+    HierarchicalNSW<float> *appr_alg;
+    InnerProductSpace ipspace(vecdim);
+    appr_alg = new HierarchicalNSW<float>(&ipspace, base_number, M, efConstruction);
+
+    appr_alg->addPoint(base, 0);
+    #pragma omp parallel for
+    for(int i = 1; i < base_number; ++i) {
+        appr_alg->addPoint(base + 1ll*vecdim*i, i);
+    }
+
+    char path_index[1024] = "files/hnsw.index";
+    appr_alg->saveIndex(path_index);
+}
+
+
 int main(int argc, char *argv[])
 {
     size_t test_number = 0, base_number = 0;
     size_t test_gt_d = 0, vecdim = 0;
 
-    std::string data_path = "data/";
+    std::string data_path = "/anndata/"; 
     auto test_query = LoadData<float>(data_path + "DEEP100K.query.fbin", test_number, vecdim);
     auto test_gt = LoadData<int>(data_path + "DEEP100K.gt.query.100k.top100.bin", test_number, test_gt_d);
     auto base = LoadData<float>(data_path + "DEEP100K.base.100k.fbin", base_number, vecdim);
     // 只测试前2000条查询
     test_number = 2000;
 
-    build_index(base, base_number, vecdim);
-
     const size_t k = 10;
 
     std::vector<SearchResult> results;
     results.resize(test_number);
 
+    // 如果你需要保存索引，可以在这里添加你需要的函数，你可以将下面的注释删除来查看pbs是否将build.index返回到你的files目录中
+    // 要保存的目录必须是files/*
+    // 每个人的目录空间有限，不需要的索引请及时删除，避免占空间太大
+    // 不建议在正式测试查询时同时构建索引，否则性能波动会较大
+    // 下面是一个构建hnsw索引的示例
+    build_pq(base, base_number, vecdim);
 
+    
     // 查询测试代码
     for(int i = 0; i < test_number; ++i) {
         const unsigned long Converter = 1000 * 1000;
@@ -67,7 +97,7 @@ int main(int argc, char *argv[])
 
         // 该文件已有代码中你只能修改该函数的调用方式
         // 可以任意修改函数名，函数参数或者改为调用成员函数，但是不能修改函数返回值。
-        auto res = flat_search(base, test_query + i*vecdim, base_number, vecdim, k);
+        auto res = pq_solve(base, test_query + i*vecdim, base_number, vecdim, k);
 
         struct timeval newVal;
         ret = gettimeofday(&newVal, NULL);

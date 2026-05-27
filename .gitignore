@@ -1,14 +1,11 @@
-# ===== 文档/报告/分析 =====
 *.pdf
 *.md
 *.tex
 *.txt
 
-# ===== 编译产物 =====
 *.o
 *.out
 
-# 可执行文件（无扩展名或已知命名模式）
 main
 main_avx2
 main_sse
@@ -20,10 +17,8 @@ bench_pq
 test_arm64
 test_x86_64
 
-# ===== 数据 =====
 data/
 
-# ===== IDE/编辑器 =====
 .vscode/
 .idea/
 *.swp
