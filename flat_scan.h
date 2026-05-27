@@ -36,5 +36,3 @@ inline std::priority_queue<std::pair<float, int>> flat_scan_search(
 
     return result;
 }
-
-#endif // FLAT_SCAN_H

@@ -28,7 +28,6 @@ T *LoadData(std::string data_path, size_t& n, size_t& d)
 struct SearchResult { float recall; int64_t latency; };
 const unsigned long C = 1000*1000;
 
-// ===== serial =====
 void run_serial(const float* base, const float* query, const int* gt,
                 size_t bn, size_t vd, size_t gtd, size_t tn, size_t k, SearchResult* res){
     for(size_t i=0;i<tn;++i){
@@ -44,7 +43,6 @@ void run_serial(const float* base, const float* query, const int* gt,
     }
 }
 
-// ===== Pthread query-level =====
 struct QP{ int tid,nt; const float *base,*query; const int* gt;
     size_t bn,vd,gtd,tn,k; SearchResult* res; };
 void* qw(void* arg){

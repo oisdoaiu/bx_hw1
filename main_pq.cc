@@ -37,7 +37,6 @@ struct SearchResult
     int64_t latency;
 };
 
-// ===== query-level Pthread =====
 
 struct ThreadParam
 {
@@ -113,7 +112,6 @@ void run_pthread(const float* base, const float* test_query, const int* test_gt,
     delete[] params;
 }
 
-// ===== OpenMP subspace-level build_lut =====
 #ifdef _OPENMP
 
 inline void build_lut_omp(const float* query, float* lut, const float* centroids,
@@ -163,7 +161,6 @@ inline void build_lut_omp(const float* query, float* lut, const float* centroids
     }
 }
 
-// pq_search variant using omp build_lut
 inline std::priority_queue<std::pair<float, int>> pq_search_omp_lut(
     const float* base_float, const uint8_t* codes, const float* centroids,
     const float* query, size_t base_number, size_t vecdim,
@@ -171,8 +168,6 @@ inline std::priority_queue<std::pair<float, int>> pq_search_omp_lut(
 {
     std::vector<float> lut(M * Ks);
     build_lut_omp(query, lut.data(), centroids, vecdim, M, Ks, num_threads);
-    // rest identical to pq_search — coarse scan + refine
-    // reuse pq_search body inline
     std::priority_queue<std::pair<float, int>> coarse_heap;
 
 #if defined(__AVX2__)
@@ -213,7 +208,6 @@ inline std::priority_queue<std::pair<float, int>> pq_search_omp_lut(
         }
     }
 #elif defined(__ARM_NEON)
-    // ... NEON path (same as pq_gather.h)
     float current_thresh = FLT_MAX;
     size_t i = 0;
     for(; i + 4 <= base_number; i += 4){
@@ -288,7 +282,6 @@ inline std::priority_queue<std::pair<float, int>> pq_search_omp_lut(
     return result;
 }
 
-// ===== OpenMP query-level =====
 void run_openmp_query(const float* base, const float* test_query, const int* test_gt,
                       size_t base_number, size_t vecdim, size_t test_gt_d,
                       size_t test_number, size_t k, SearchResult* results, int num_threads)
@@ -315,7 +308,6 @@ void run_openmp_query(const float* base, const float* test_query, const int* tes
     }
 }
 
-// ===== OpenMP subspace-level (build_lut parallel only) =====
 void run_openmp_subspace(const float* base, const float* test_query, const int* test_gt,
                          size_t base_number, size_t vecdim, size_t test_gt_d,
                          size_t test_number, size_t k, SearchResult* results, int num_threads)
@@ -351,7 +343,6 @@ void run_openmp_subspace(const float* base, const float* test_query, const int* 
 }
 #endif
 
-// ===== serial =====
 void run_serial(const float* base, const float* test_query, const int* test_gt,
                 size_t base_number, size_t vecdim, size_t test_gt_d,
                 size_t test_number, size_t k, SearchResult* results)

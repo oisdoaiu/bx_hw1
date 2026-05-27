@@ -12,11 +12,9 @@
 #include <queue>
 #include <utility>
 
-// ===== KMeans clustering =====
 inline void kmeans_cluster(const float* base, size_t base_number, size_t vecdim,
                             float* centroids, size_t nlist, int max_iters)
 {
-    // random init: pick first nlist vectors as initial centroids
     for(size_t c = 0; c < nlist; c++){
         size_t idx = (c * (base_number / nlist)) % base_number;
         std::memcpy(centroids + c * vecdim, base + idx * vecdim, vecdim * sizeof(float));
@@ -25,7 +23,6 @@ inline void kmeans_cluster(const float* base, size_t base_number, size_t vecdim,
     std::vector<int> assignments(base_number);
 
     for(int iter = 0; iter < max_iters; iter++){
-        // assign
         for(size_t i = 0; i < base_number; i++){
             const float* v = base + i * vecdim;
             float best_dist = FLT_MAX;
@@ -40,7 +37,6 @@ inline void kmeans_cluster(const float* base, size_t base_number, size_t vecdim,
             assignments[i] = best_c;
         }
 
-        // update
         std::vector<float> sum(nlist * vecdim, 0.0f);
         std::vector<int> counts(nlist, 0);
         for(size_t i = 0; i < base_number; i++){
@@ -61,7 +57,6 @@ inline void kmeans_cluster(const float* base, size_t base_number, size_t vecdim,
     }
 }
 
-// ===== IVF index =====
 static std::vector<float> g_ivf_centroids;
 static std::vector<std::vector<int>> g_ivf_lists;
 static size_t g_ivf_nlist;
@@ -77,7 +72,6 @@ inline void build_ivf(const float* base, size_t base_number, size_t vecdim)
     g_ivf_centroids.resize(g_ivf_nlist * vecdim);
     kmeans_cluster(base, base_number, vecdim, g_ivf_centroids.data(), g_ivf_nlist, 15);
 
-    // assign all vectors to clusters
     g_ivf_lists.resize(g_ivf_nlist);
     for(size_t c = 0; c < g_ivf_nlist; c++) g_ivf_lists[c].clear();
 
@@ -97,7 +91,6 @@ inline void build_ivf(const float* base, size_t base_number, size_t vecdim)
     std::cerr << "IVF built: nlist=" << g_ivf_nlist << " total_vectors=" << total << "\n";
 }
 
-// ===== IVF search =====
 inline std::priority_queue<std::pair<float, int>> ivf_search(
     const float* query,
     size_t base_number,
@@ -105,7 +98,6 @@ inline std::priority_queue<std::pair<float, int>> ivf_search(
     size_t k,
     size_t nprobe)
 {
-    // coarse: find nearest nprobe clusters (negate dist for min-heap)
     std::priority_queue<std::pair<float, int>> cluster_heap;
     for(size_t c = 0; c < g_ivf_nlist; c++){
         float d = InnerProductSIMD(query, g_ivf_centroids.data() + c * vecdim, vecdim);
@@ -119,7 +111,6 @@ inline std::priority_queue<std::pair<float, int>> ivf_search(
         cluster_heap.pop();
     }
 
-    // fine: scan selected clusters
     std::priority_queue<std::pair<float, int>> result;
     for(int c : probes){
         for(int idx : g_ivf_lists[c]){

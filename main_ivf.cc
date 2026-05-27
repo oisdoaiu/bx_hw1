@@ -32,7 +32,6 @@ T *LoadData(std::string data_path, size_t& n, size_t& d)
 
 struct SearchResult { float recall; int64_t latency; };
 
-// ===== serial =====
 void run_serial(const float* base, const float* test_query, const int* test_gt,
                 size_t base_number, size_t vecdim, size_t test_gt_d,
                 size_t test_number, size_t k, SearchResult* results)
@@ -51,7 +50,6 @@ void run_serial(const float* base, const float* test_query, const int* test_gt,
     }
 }
 
-// ===== Pthread query-level =====
 struct QThreadParam {
     int tid, nt; const float *base, *query; const int* gt;
     size_t bn, vd, gtd, tn, k; SearchResult* res;
@@ -83,7 +81,6 @@ void run_pthread(const float* base, const float* query, const int* gt,
     delete[] th; delete[] pr;
 }
 
-// ===== OpenMP query-level =====
 #ifdef _OPENMP
 void run_omp_query(const float* base, const float* query, const int* gt,
                     size_t bn, size_t vd, size_t gtd, size_t tn, size_t k,
@@ -104,9 +101,6 @@ void run_omp_query(const float* base, const float* query, const int* gt,
     }
 }
 
-// ===== OpenMP cluster-level (fine ranking parallel) =====
-// For each query: divide the nprobe selected clusters among threads
-// Each thread scans its clusters with local top-k, then merge
 void run_omp_cluster(const float* base, const float* query, const int* gt,
                      size_t bn, size_t vd, size_t gtd, size_t tn, size_t k,
                      SearchResult* res, int nt){
@@ -119,7 +113,6 @@ void run_omp_cluster(const float* base, const float* query, const int* gt,
         struct timeval val; gettimeofday(&val, NULL);
         const float* q = query + qi*vd;
 
-        // coarse: find nearest nprobe clusters (negate dist for min-heap)
         std::priority_queue<std::pair<float,int>> ch;
         for(size_t c=0; c<g_ivf_nlist; c++){
             float d=InnerProductSIMD(q, g_ivf_centroids.data()+c*vd, vd);
@@ -130,7 +123,6 @@ void run_omp_cluster(const float* base, const float* query, const int* gt,
             probes.push_back(ch.top().second); ch.pop();
         }
 
-        // fine: parallel over clusters
         std::vector<std::pair<float,int>> all_cand;
         #pragma omp parallel num_threads(nt)
         {
@@ -155,7 +147,6 @@ void run_omp_cluster(const float* base, const float* query, const int* gt,
             { while(!local_pq.empty()){ all_cand.push_back(local_pq.top()); local_pq.pop(); } }
         }
 
-        // merge
         std::priority_queue<std::pair<float,int>> merged;
         for(auto& cand : all_cand){
             if(merged.size()<k) merged.push(cand);

@@ -44,9 +44,6 @@ inline std::priority_queue<std::pair<float, int>> hnsw_solve(
     }
 
     std::priority_queue<std::pair<float, int>> result;
-    // hnswlib returns (ip, id) max-heap by inner product (larger ip = more similar)
-    // Our format: (1.0-ip, id) min-heap (smaller distance = more similar)
-    // tmp is sorted by ip descending, so reverse to get ip ascending
     for(int i = (int)tmp.size()-1; i >= 0; i--){
         result.push(std::make_pair(1.0f - tmp[i].first, tmp[i].second));
     }

@@ -201,7 +201,6 @@ void run_openmp(const float* base, const float* test_query, const int* test_gt,
 }
 #endif
 
-// ========== Base-level parallel (divide base vectors per query) ==========
 
 struct BaseThreadParam
 {
@@ -272,7 +271,6 @@ void run_pthread_basepar(const float* base, const float* test_query, const int* 
             pthread_join(threads[t], nullptr);
         }
 
-        // merge local results
         std::priority_queue<std::pair<float, int>> merged;
         for(int t = 0; t < num_threads; t++){
             for(auto& cand : params[t].local_candidates){
@@ -322,7 +320,6 @@ void run_openmp_basepar(const float* base, const float* test_query, const int* t
 
         const float* query = test_query + qi * vecdim;
 
-        // thread-local storage for merge
         std::vector<std::pair<float, int>> all_candidates;
 
         #pragma omp parallel num_threads(num_threads)
@@ -332,9 +329,6 @@ void run_openmp_basepar(const float* base, const float* test_query, const int* t
             size_t chunk = base_number / nt;
             size_t start = tid * chunk;
             size_t end = (tid == nt - 1) ? base_number : start + chunk;
-
-            // Manual chunk assignment (equivalent to schedule(static))
-            // Each thread processes its own [start, end) range
 
             std::priority_queue<std::pair<float, int>> local_pq;
 
@@ -349,7 +343,6 @@ void run_openmp_basepar(const float* base, const float* test_query, const int* t
                 }
             }
 
-            // collect local results into shared vector (critical section)
             #pragma omp critical
             {
                 while(!local_pq.empty()){
@@ -359,7 +352,6 @@ void run_openmp_basepar(const float* base, const float* test_query, const int* t
             }
         }
 
-        // merge
         std::priority_queue<std::pair<float, int>> merged;
         for(auto& cand : all_candidates){
             if(merged.size() < k){

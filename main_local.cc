@@ -36,7 +36,7 @@ T *LoadData(std::string data_path, size_t& n, size_t& d)
 struct SearchResult
 {
     float recall;
-    int64_t latency; // 单位us
+    int64_t latency;
 };
 
 int main(int argc, char *argv[])
@@ -48,7 +48,6 @@ int main(int argc, char *argv[])
     auto test_query = LoadData<float>(data_path + "DEEP100K.query.fbin", test_number, vecdim);
     auto test_gt = LoadData<int>(data_path + "DEEP100K.gt.query.100k.top100.bin", test_number, test_gt_d);
     auto base = LoadData<float>(data_path + "DEEP100K.base.100k.fbin", base_number, vecdim);
-    // 只测试前2000条查询
     test_number = 2000;
 
     build_index(base, base_number, vecdim);
@@ -59,14 +58,11 @@ int main(int argc, char *argv[])
     results.resize(test_number);
 
 
-    // 查询测试代码
     for(int i = 0; i < test_number; ++i) {
         const unsigned long Converter = 1000 * 1000;
         struct timeval val;
         int ret = gettimeofday(&val, NULL);
 
-        // 该文件已有代码中你只能修改该函数的调用方式
-        // 可以任意修改函数名，函数参数或者改为调用成员函数，但是不能修改函数返回值。
         auto res = flat_search(base, test_query + i*vecdim, base_number, vecdim, k);
 
         struct timeval newVal;
@@ -98,7 +94,6 @@ int main(int argc, char *argv[])
         avg_latency += results[i].latency;
     }
 
-    // 浮点误差可能导致一些精确算法平均recall不是1
     std::cout << "average recall: "<<avg_recall / test_number<<"\n";
     std::cout << "average latency (us): "<<avg_latency / test_number<<"\n";
     return 0;

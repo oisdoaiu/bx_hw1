@@ -29,7 +29,6 @@ T *LoadData(std::string data_path, size_t& n, size_t& d)
 
 struct SearchResult { float recall; int64_t latency; };
 
-// ===== serial =====
 void run_serial(const float* base, const float* query, const int* gt,
                 size_t bn, size_t vd, size_t gtd, size_t tn, size_t k, SearchResult* res)
 {
@@ -47,7 +46,6 @@ void run_serial(const float* base, const float* query, const int* gt,
     }
 }
 
-// ===== Pthread query-level =====
 struct QParam{ int tid,nt; const float *base,*query; const int* gt;
     size_t bn,vd,gtd,tn,k; SearchResult* res; };
 void* qw(void* arg){
@@ -77,7 +75,6 @@ void run_pthread(const float* base, const float* query, const int* gt,
 }
 
 #ifdef _OPENMP
-// OpenMP query-level
 void run_omp_query(const float* base, const float* query, const int* gt,
                    size_t bn, size_t vd, size_t gtd, size_t tn, size_t k, SearchResult* res, int nt){
     const unsigned long C=1000*1000;
@@ -95,7 +92,6 @@ void run_omp_query(const float* base, const float* query, const int* gt,
     }
 }
 
-// OpenMP cluster-level: divide nprobe clusters among threads, PQ scan + rerank + merge
 void run_omp_cluster(const float* base, const float* query, const int* gt,
                      size_t bn, size_t vd, size_t gtd, size_t tn, size_t k, SearchResult* res, int nt){
     const unsigned long C=1000*1000;
@@ -108,11 +104,9 @@ void run_omp_cluster(const float* base, const float* query, const int* gt,
         struct timeval val; gettimeofday(&val,NULL);
         const float* q=query+qi*vd;
 
-        // LUT
         std::vector<float> lut(g_pq_M*g_pq_Ks);
         build_lut(q,lut.data(),g_pq_centroids.data(),vd,g_pq_M,g_pq_Ks);
 
-        // coarse
         std::priority_queue<std::pair<float,int>> ch;
         for(size_t c=0;c<g_ivf_nlist;c++){
             float d=InnerProductSIMD(q,g_ivf_centroids.data()+c*vd,vd);
@@ -121,7 +115,6 @@ void run_omp_cluster(const float* base, const float* query, const int* gt,
         std::vector<int> probes; probes.reserve(nprobe);
         for(size_t p=0;p<nprobe&&!ch.empty();p++){ probes.push_back(ch.top().second); ch.pop(); }
 
-        // fine: PQ scan (cluster-level parallel) → get top rerank_p candidates
         std::priority_queue<std::pair<float,int>> pq_heap;
         #pragma omp parallel num_threads(nt)
         {
@@ -144,14 +137,11 @@ void run_omp_cluster(const float* base, const float* query, const int* gt,
             { while(!local_pq.empty()){ pq_heap.push(local_pq.top()); local_pq.pop(); } }
         }
 
-        // merge PQ results: keep top rerank_p
         std::vector<std::pair<float,int>> pq_cand;
         while(!pq_heap.empty()){ pq_cand.push_back(pq_heap.top()); pq_heap.pop(); }
-        // sort ascending by dist
         std::sort(pq_cand.begin(), pq_cand.end());
         if(pq_cand.size()>rerank_p) pq_cand.resize(rerank_p);
 
-        // rerank: exact float distance on top rerank_p candidates
         std::priority_queue<std::pair<float,int>> merged;
         for(auto& cand:pq_cand){
             float dist=InnerProductSIMD(base+(size_t)cand.second*vd,q,vd);
