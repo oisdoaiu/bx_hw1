@@ -63,3 +63,4 @@ inline std::priority_queue<std::pair<float, int>> flat_simd_search(
 
     return result;
 }
+#endif // FLAT_SEARCH_H

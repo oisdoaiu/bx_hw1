@@ -308,6 +308,74 @@ void run_openmp_query(const float* base, const float* test_query, const int* tes
     }
 }
 
+void run_pthread_subspace(const float* base, const float* test_query, const int* test_gt,
+                         size_t base_number, size_t vecdim, size_t test_gt_d,
+                         size_t test_number, size_t k, SearchResult* results, int num_threads)
+{
+    const unsigned long Converter = 1000 * 1000;
+    size_t M = 8, Ks = 256;
+    const char* env_m = std::getenv("PQ_M"); if(env_m) M = (size_t)std::atoi(env_m);
+    size_t p = 500;
+    const char* env_p = std::getenv("PQ_P"); if(env_p) p = (size_t)std::atoi(env_p);
+
+    for(size_t i = 0; i < test_number; ++i){
+        struct timeval val; gettimeofday(&val, NULL);
+        const float* query = test_query + i * vecdim;
+
+        // build_lut with Pthread per query
+        std::vector<float> lut(M * Ks);
+        size_t dsub = vecdim / M;
+        pthread_t* threads = new pthread_t[num_threads];
+        struct LutThread { int tid, nt; const float* query; float* lut; const float* centroids; size_t M, Ks, dsub; } *params = new LutThread[num_threads];
+
+        auto lut_worker = [](void* arg) -> void* {
+            auto* p = (LutThread*)arg;
+            size_t chunk = p->M / p->nt;
+            size_t m_start = p->tid * chunk;
+            size_t m_end = (p->tid == p->nt - 1) ? p->M : m_start + chunk;
+            for(size_t m = m_start; m < m_end; m++){
+                const float* qs = p->query + m * p->dsub;
+                const float* cm = p->centroids + m * p->Ks * p->dsub;
+                float* lm = p->lut + m * p->Ks;
+                for(size_t k = 0; k < p->Ks; k++)
+                    lm[k] = 1.0f - InnerProductSIMD(qs, cm + k * p->dsub, p->dsub);
+            }
+            return nullptr;
+        };
+
+        for(int t = 0; t < num_threads; t++){
+            params[t] = {t, num_threads, query, lut.data(), g_pq_centroids.data(), M, Ks, dsub};
+            pthread_create(&threads[t], nullptr, lut_worker, &params[t]);
+        }
+        for(int t = 0; t < num_threads; t++) pthread_join(threads[t], nullptr);
+        delete[] threads; delete[] params;
+
+        // table scan (serial)
+        std::priority_queue<std::pair<float,int>> coarse_heap;
+        for(size_t j = 0; j < base_number; j++){
+            float is = 0.0f;
+            for(size_t m = 0; m < M; m++) is += lut[m*Ks + g_pq_codes[m*base_number + j]];
+            float d = 1.0f - is;
+            if(coarse_heap.size() < p) coarse_heap.push(std::make_pair(d, (int)j));
+            else if(d < coarse_heap.top().first){ coarse_heap.pop(); coarse_heap.push(std::make_pair(d, (int)j)); }
+        }
+        std::vector<int> cand; cand.reserve(p);
+        while(!coarse_heap.empty()){ cand.push_back(coarse_heap.top().second); coarse_heap.pop(); }
+        std::priority_queue<std::pair<float,int>> result;
+        for(int idx : cand){
+            float dist = InnerProductSIMD(base + (size_t)idx * vecdim, query, vecdim);
+            if(result.size() < k) result.push(std::make_pair(dist, idx));
+            else if(dist < result.top().first){ result.pop(); result.push(std::make_pair(dist, idx)); }
+        }
+
+        struct timeval nv; gettimeofday(&nv, NULL);
+        int64_t diff = (nv.tv_sec*Converter + nv.tv_usec) - (val.tv_sec*Converter + val.tv_usec);
+        std::set<uint32_t> gt; for(size_t j=0;j<k;++j) gt.insert((uint32_t)test_gt[j+i*test_gt_d]);
+        size_t acc=0; while(result.size()){ if(gt.find((uint32_t)result.top().second)!=gt.end())++acc; result.pop(); }
+        results[i] = {(float)acc/k, diff};
+    }
+}
+
 void run_openmp_subspace(const float* base, const float* test_query, const int* test_gt,
                          size_t base_number, size_t vecdim, size_t test_gt_d,
                          size_t test_number, size_t k, SearchResult* results, int num_threads)
@@ -397,6 +465,11 @@ int main()
         std::cerr << "PQ OpenMP query-level, threads=" << num_threads << "\n";
         run_openmp_query(base, test_query, test_gt, base_number, vecdim,
                          test_gt_d, test_number, k, results.data(), num_threads);
+    }
+    else if(mode_str == "pthread_subspace"){
+        std::cerr << "PQ Pthread subspace-level (build_lut), threads=" << num_threads << "\n";
+        run_pthread_subspace(base, test_query, test_gt, base_number, vecdim,
+                             test_gt_d, test_number, k, results.data(), num_threads);
     }
     else if(mode_str == "openmp_subspace"){
         std::cerr << "PQ OpenMP subspace-level (build_lut), threads=" << num_threads << "\n";
