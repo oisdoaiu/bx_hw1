@@ -7,7 +7,6 @@
 *.o
 *.out
 
-# Build artifacts
 main_*
 bench_pq
 quick_test
@@ -21,6 +20,4 @@ data
 *.swo
 *~
 
-# MPI lab files - exceptions to broad rules above
 !mpi/main_*.cc
-!mpi/*.md
