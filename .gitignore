@@ -20,3 +20,7 @@ data
 *.swp
 *.swo
 *~
+
+# MPI lab files - exceptions to broad rules above
+!mpi/main_*.cc
+!mpi/*.md
