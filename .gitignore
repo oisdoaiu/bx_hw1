@@ -2,22 +2,18 @@
 *.md
 *.tex
 *.txt
+*.png
 
 *.o
 *.out
 
-main
-main_avx2
-main_sse
-main_test
-main_flat_avx2
-main_flat_sse
-main_arm64
+# Build artifacts
+main_*
 bench_pq
-test_arm64
-test_x86_64
+quick_test
+test_*
 
-data/
+data
 
 .vscode/
 .idea/
