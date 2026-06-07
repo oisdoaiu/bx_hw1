@@ -299,6 +299,166 @@ int main(int argc, char* argv[])
                             base_number, vecdim, test_gt_d,
                             test_number, k, nranks, rank, nthreads, nprobe);
     }
+    else if(ivf_mode == "mpi_dynamic"){
+        // === 模式: 主从动态任务池 ===
+        // rank 0 = master，维护查询队列
+        // worker 空闲时主动请求下一个查询（TAG=0: request, TAG=1: query_idx, TAG=2: result）
+        double t_start = MPI_Wtime();
+        std::vector<float> recalls(test_number, 0.0f);
+
+        if(rank == 0){
+            int next_query = 0;
+            int active_workers = nranks - 1;
+            std::vector<char> recv_buf;
+            MPI_Status st;
+
+            while(active_workers > 0){
+                // 接收任何 worker 的请求
+                int dummy;
+                MPI_Recv(&dummy, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &st);
+                int worker = st.MPI_SOURCE;
+
+                if(next_query < (int)test_number){
+                    // 分配查询
+                    int qi = next_query++;
+                    MPI_Send(&qi, 1, MPI_INT, worker, 1, MPI_COMM_WORLD);
+
+                    // 接收结果
+                    int sz;
+                    MPI_Recv(&sz, 1, MPI_INT, worker, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    recv_buf.resize(sz);
+                    MPI_Recv(recv_buf.data(), sz, MPI_BYTE, worker, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+                    // 计算 recall（worker 返回的是局部结果，直接就是全局的，因为 worker 有完整索引）
+                    std::priority_queue<std::pair<float,int>> w_pq;
+                    deserialize_pq(recv_buf.data(), w_pq);
+                    recalls[qi] = compute_recall(w_pq, test_gt + qi * test_gt_d, k, test_gt_d);
+                } else {
+                    // 没有更多查询
+                    int done = -1;
+                    MPI_Send(&done, 1, MPI_INT, worker, 1, MPI_COMM_WORLD);
+                    active_workers--;
+                }
+            }
+        } else {
+            // Worker: 反复请求任务
+            while(true){
+                int dummy = 0;
+                MPI_Send(&dummy, 1, MPI_INT, 0, 0, MPI_COMM_WORLD);
+                int qi;
+                MPI_Recv(&qi, 1, MPI_INT, 0, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                if(qi < 0) break; // 没有更多任务
+
+                const float* q = test_query + qi * vecdim;
+                auto local_pq = ivf_search(q, base_number, vecdim, k, nprobe);
+                std::vector<char> buf;
+                serialize_pq(local_pq, buf);
+                int sz = (int)buf.size();
+                MPI_Send(&sz, 1, MPI_INT, 0, 2, MPI_COMM_WORLD);
+                MPI_Send(buf.data(), sz, MPI_BYTE, 0, 2, MPI_COMM_WORLD);
+            }
+        }
+
+        double t_end = MPI_Wtime();
+        float local_ar = 0;
+        for(size_t i = 0; i < test_number; i++) local_ar += recalls[i];
+        float global_ar = 0;
+        MPI_Reduce(&local_ar, &global_ar, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+        if(rank == 0){
+            std::cout << "=== MPI Dynamic Master-Worker ===\n";
+            std::cout << "nranks: " << nranks << "  partition: " << part_mode << "\n";
+            std::cout << "nlist: " << g_ivf_nlist << "  nprobe: " << nprobe << "\n";
+            std::cout << "average recall: " << global_ar / test_number << "\n";
+            std::cout << "total_time (s): " << (t_end - t_start) << "\n";
+            std::cout << "average latency (us): " << ((t_end - t_start) * 1e6 / test_number) << "\n";
+        }
+    }
+    else if(ivf_mode == "mpi_async"){
+        // === 模式: 非阻塞通信 pipeline（通信与计算重叠） ===
+        // 用 MPI_Isend/MPI_Irecv 替代 MPI_Gather
+        // Worker: 计算 query[i] → Isend 结果 → 立即计算 query[i+1]（后台传输）
+        // Master: 接收 worker 结果的同时处理自己的查询
+        double t_start = MPI_Wtime();
+        std::vector<float> recalls(test_number, 0.0f);
+        const int TAG_SZ = 20, TAG_DAT = 21;
+        const int BATCH = 32;
+
+        if(rank == 0){
+            // Master: 串行处理自己的查询 + 非阻塞接收 worker 结果
+            int next_qi = 0;
+            std::vector<MPI_Request> recv_reqs;
+            std::vector<std::vector<char>> worker_bufs(nranks);
+
+            // 为每个 worker 预发 Irecv（探测模式：先收大小，再收数据）
+            // 简化：使用 MPI_Probe + MPI_Recv（本质仍是阻塞，但可展示概念）
+            // 真正的 overlap 需要双缓冲，这里实现的是 "查询级流水线"
+            for(size_t qi = 0; qi < test_number; qi++){
+                // 处理自己的查询
+                auto local_pq = ivf_search(test_query + qi * vecdim, base_number, vecdim, k, nprobe);
+
+                // 接收来自每个 worker 的 query[qi] 结果（如果 qi < test_number）
+                std::vector<std::vector<char>> rbufs(nranks);
+                // 自己的结果
+                std::vector<char> own_buf; serialize_pq(local_pq, own_buf);
+                rbufs[0] = own_buf;
+
+                // 接收 worker 结果
+                for(int src = 1; src < nranks; src++){
+                    int sz;
+                    MPI_Recv(&sz, 1, MPI_INT, src, TAG_SZ, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    rbufs[src].resize(sz);
+                    MPI_Recv(rbufs[src].data(), sz, MPI_BYTE, src, TAG_DAT, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
+                auto gpq = merge_topk(rbufs, k);
+                recalls[qi] = compute_recall(gpq, test_gt + qi * test_gt_d, k, test_gt_d);
+            }
+        } else {
+            // Worker: 流水线——Isend query[i] 的结果，同时计算 query[i+1]
+            MPI_Request prev_sz_req, prev_dat_req;
+            bool has_pending = false;
+            std::vector<char> pending_buf;
+
+            for(size_t qi = 0; qi < test_number; qi++){
+                auto local_pq = ivf_search(test_query + qi * vecdim, base_number, vecdim, k, nprobe);
+                std::vector<char> buf; serialize_pq(local_pq, buf);
+
+                // 等上一轮发送完成
+                if(has_pending){
+                    MPI_Wait(&prev_sz_req, MPI_STATUS_IGNORE);
+                    MPI_Wait(&prev_dat_req, MPI_STATUS_IGNORE);
+                }
+
+                // 启动本轮非阻塞发送
+                int sz = (int)buf.size();
+                pending_buf = std::move(buf);
+                MPI_Isend(&sz, 1, MPI_INT, 0, TAG_SZ, MPI_COMM_WORLD, &prev_sz_req);
+                MPI_Isend(pending_buf.data(), sz, MPI_BYTE, 0, TAG_DAT, MPI_COMM_WORLD, &prev_dat_req);
+                has_pending = true;
+                // 注意：pending_buf 必须在 Isend 完成前保持有效！
+                // 简化处理：每次 send 完再复用缓冲区，但这破坏了 overlap
+                // 真正 overlap 需要双缓冲：一个在发送，一个在填充
+                // 由于 k=10 消息极小（~88B），发送几乎瞬时完成，overlap 窗口极小
+            }
+            if(has_pending){
+                MPI_Wait(&prev_sz_req, MPI_STATUS_IGNORE);
+                MPI_Wait(&prev_dat_req, MPI_STATUS_IGNORE);
+            }
+        }
+
+        double t_end = MPI_Wtime();
+        float local_ar = 0;
+        for(size_t i = 0; i < test_number; i++) local_ar += recalls[i];
+        float global_ar = 0;
+        MPI_Reduce(&local_ar, &global_ar, 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+        if(rank == 0){
+            std::cout << "=== MPI Async Pipeline ===\n";
+            std::cout << "nranks: " << nranks << "  partition: " << part_mode << "\n";
+            std::cout << "nlist: " << g_ivf_nlist << "  nprobe: " << nprobe << "\n";
+            std::cout << "average recall: " << global_ar / test_number << "\n";
+            std::cout << "total_time (s): " << (t_end - t_start) << "\n";
+            std::cout << "average latency (us): " << ((t_end - t_start) * 1e6 / test_number) << "\n";
+        }
+    }
     else {
         // 纯 MPI 模式: mpi_gather 或 mpi_reduce
         const char* merge_mode = std::getenv("IVF_MERGE_MODE");
