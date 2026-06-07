@@ -24,6 +24,7 @@
 #include "../ivf_simd.h"
 #include "../hnswlib/hnswlib/hnswlib.h"
 #include "../hnswlib/hnswlib/hnswalg.h"
+#include "../hnsw_parallel_exp.h"
 #include "mpi_utils.h"
 
 template<typename T>
@@ -54,6 +55,10 @@ int main(int argc, char* argv[])
 
     const char* env_ef = std::getenv("HNSW_EF");
     int ef = env_ef ? std::atoi(env_ef) : 50;
+    const char* nt_env = std::getenv("NUM_THREADS");
+    int nthreads = nt_env ? std::atoi(nt_env) : 1;
+    const char* pk_env = std::getenv("HNSW_PAR_K");
+    int par_k = pk_env ? std::atoi(pk_env) : 8;
 
     std::string dp = "../data/";
 
@@ -248,7 +253,12 @@ int main(int argc, char* argv[])
             int local_c = probe_c - my_start;
             if(cluster_hnsws[local_c] == nullptr) continue;
 
-            auto hnsw_pq = cluster_hnsws[local_c]->searchKnn((void*)q, k);
+            // 簇内 HNSW 搜索：串行 or 多线程并行扩张
+            std::priority_queue<std::pair<float, hnswlib::labeltype>> hnsw_pq;
+            if(nthreads > 1 && cluster_sizes[probe_c] > 50)
+                hnsw_pq = hnsw_par_search(cluster_hnsws[local_c], (void*)q, k, par_k, nthreads);
+            else
+                hnsw_pq = cluster_hnsws[local_c]->searchKnn((void*)q, k);
             // 转换为统一格式 (distance = 1.0 - inner_product, 越小越好)
             std::vector<std::pair<float,int>> tmp;
             while(!hnsw_pq.empty()){
@@ -312,7 +322,8 @@ int main(int argc, char* argv[])
         double total_time = t_end - t_start;
         double avg_latency_us = (total_time * 1e6) / test_number;
         std::cout << "=== IVF+HNSW MPI Results ===\n";
-        std::cout << "nranks: " << nranks << "\n";
+        std::cout << "nranks: " << nranks << "  nthreads_per_rank: " << nthreads
+                  << "  par_k: " << par_k << "\n";
         std::cout << "nlist: " << nlist << "  nprobe: " << nprobe << "  ef: " << ef << "\n";
         std::cout << "average recall: " << global_ar / test_number << "\n";
         std::cout << "total_time (s): " << total_time << "\n";
